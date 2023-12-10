@@ -1,0 +1,171 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Kubernetes Logs - Curl</title>
+    <!-- Bootstrap CSS -->
+    <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/css/bootstrap.min.css"
+        integrity="sha384-JcKb8q3iqJ61gNV9KGb8thSsNjpSL0n8PARn9HuZOnIxN0hoP+VmmDGMN5t9UJ0Z" crossorigin="anonymous">
+</head>
+
+<body class="bg-light">
+    <div class="container mt-5">
+        <h1>Kubernetes Logs - Curl</h1>
+
+        <form id="curlForm">
+            <div class="form-group">
+                <label for="namespace">Select Namespace:</label>
+                <select class="form-control" name="namespace" required id="namespaceSelect"></select>
+            </div>
+
+            <div class="form-group">
+                <label for="pod_name">Select Pod:</label>
+                <select class="form-control" name="pod_name" required id="podSelect"></select>
+            </div>
+
+            <div class="form-group">
+                <label for="curlCommand">Curl Command:</label>
+                <input class="form-control" type="text" name="curlCommand" required id="curlCommand">
+            </div>
+
+            <button type="button" class="btn btn-primary" id="getPodsButton">Get Pods</button>
+            <button type="submit" class="btn btn-success" id="executeCurlButton" disabled>Execute Curl</button>
+        </form>
+
+        <pre id="curlOutput" class="mt-3"></pre>
+    </div>
+
+    <!-- Bootstrap JS and dependencies -->
+    <script src="https://code.jquery.com/jquery-3.6.4.min.js"
+        integrity="sha256-oP6HI/t1i0vZIWLObYDr1cZghp0NcR0BDxhVuFIEbu0=" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@popperjs/core@2.9.2/dist/umd/popper.min.js"
+        integrity="sha384-IQsoLXl5PILFhosVNubq5LC7Qb9DXgDA9i+tQ8Zj3iwWAwPtgFTxbJ8NT4GN1R8p"
+        crossorigin="anonymous"></script>
+    <script src="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/js/bootstrap.bundle.min.js"
+        integrity="sha384-LtrjvnR4Twt/qOuYxE721u19sVFLVSA4hf/rRt6PrZTmiPltdZcI7q7PXQBYTKyf"
+        crossorigin="anonymous"></script>
+    <script>
+        // Function to fetch and populate the dropdown list with namespaces
+        function populateNamespaces() {
+            fetch('/namespaces')
+                .then(response => response.json())
+                .then(data => {
+                    const namespaceSelect = document.getElementById('namespaceSelect');
+                    namespaceSelect.innerHTML = ''; // Clear existing options
+                    data.namespaces.forEach(namespace => {
+                        const option = document.createElement('option');
+                        option.value = namespace;
+                        option.text = namespace;
+                        namespaceSelect.add(option);
+                    });
+                })
+                .catch(error => {
+                    console.error('Error fetching namespaces:', error);
+                });
+        }
+
+        // Function to fetch and populate the dropdown list with pods
+        function populatePods(namespace) {
+            fetch('/pods', {
+                method: 'POST',
+                body: new URLSearchParams({ 'namespace': namespace }),
+                headers: {
+                    'Content-Type': 'application/x-www-form-urlencoded',
+                },
+            })
+                .then(response => response.json())
+                .then(data => {
+                    const podSelect = document.getElementById('podSelect');
+                    podSelect.innerHTML = ''; // Clear existing options
+                    data.pods.forEach(pod => {
+                        const option = document.createElement('option');
+                        option.value = pod;
+                        option.text = pod;
+                        podSelect.add(option);
+                    });
+                })
+                .catch(error => {
+                    console.error('Error fetching pods:', error);
+                });
+        }
+
+        // Event listener for "Get Pods" button
+        document.getElementById('getPodsButton').addEventListener('click', function () {
+            const namespaceSelect = document.getElementById('namespaceSelect');
+            const selectedNamespace = namespaceSelect.value;
+
+            if (selectedNamespace) {
+                populatePods(selectedNamespace);
+                document.getElementById('executeCurlButton').removeAttribute('disabled');
+            }
+        });
+
+        // Event listener for form submission
+        document.getElementById('curlForm').addEventListener('submit', function (event) {
+            event.preventDefault();
+            const formData = new FormData(event.target);
+            const namespace = formData.get('namespace');
+            const podName = formData.get('pod_name');
+            const curlCommand = formData.get('curlCommand');
+
+            executeCurl(namespace, podName, curlCommand);
+        });
+
+        // Function to execute curl command
+        function executeCurl(namespace, podName, curlCommand) {
+    fetch('/curl', {
+        method: 'POST',
+        body: new URLSearchParams({
+            'namespace': namespace,
+            'pod_name': podName,
+            'curl_command': curlCommand,
+        }),
+        headers: {
+            'Content-Type': 'application/x-www-form-urlencoded',
+        },
+    })
+    .then(response => {
+        if (!response.ok) {
+            throw new Error(`HTTP error! Status: ${response.status}`);
+        }
+
+        const contentType = response.headers.get('content-type');
+        if (contentType && contentType.includes('application/json')) {
+            return response.json();
+        } else {
+            return response.text();
+        }
+    })
+    .then(data => {
+        const curlOutputElement = document.getElementById('curlOutput');
+        
+        if (typeof data === 'string') {
+            // If the data is a string (HTML content), set it as innerHTML
+            curlOutputElement.innerHTML = data.replace(/\n/g, '<br>');
+        } else {
+            // If the data is JSON, handle it as before
+            if (data.error) {
+                alert('Error executing curl command: ' + data.error);
+            } else {
+                // Use JSON.stringify with indentation for pretty formatting
+                const prettyJson = JSON.stringify(JSON.parse(data.curl_output), null, 2);
+                curlOutputElement.innerText = prettyJson;
+                curlOutputElement.style.whiteSpace = 'pre-line';
+            }
+        }
+    })
+    .catch(error => {
+        console.error('Error executing curl command:', error);
+    });
+}
+
+        // Initial population of namespaces when the page loads
+        document.addEventListener('DOMContentLoaded', function () {
+            populateNamespaces();
+        });
+    </script>
+</body>
+
+</html>
