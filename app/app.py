@@ -1,4 +1,6 @@
 from flask import Flask, render_template, request, jsonify, redirect, url_for
+from flask_login import LoginManager, login_user, login_required, logout_user, UserMixin
+
 import subprocess
 import os
 import yaml
@@ -6,6 +8,56 @@ import logging
 
 logging.basicConfig(level=logging.DEBUG)
 app = Flask(__name__)
+app.secret_key = 'your_secret_key'  # Change this to a secure secret key
+
+login_manager = LoginManager(app)
+login_manager.login_view = 'login'
+
+# User class for Flask-Login
+class User(UserMixin):
+    pass
+
+# User credentials dictionary
+user_credentials = {
+    'mehrdad.kou': {'password': 'mk2mk2mk2'},
+    'elham.mohamma': {'password': 'elham.mohamma_pass'},
+    # Add more users as needed
+}
+
+@login_manager.user_loader
+def load_user(user_id):
+    user = User()
+    user.id = user_id
+    return user
+
+@app.route('/login', methods=['GET', 'POST'])
+def login():
+    if request.method == 'POST':
+        username = request.form.get('username')
+        password = request.form.get('password')
+
+        # Check if the provided credentials are valid
+        if username in user_credentials and user_credentials[username]['password'] == password:
+            user = User()
+            user.id = username
+            login_user(user)
+            return redirect(url_for('select_page'))
+        else:
+            return render_template('login.html', error='Invalid username or password')
+
+    # If the request method is GET, render the login page
+    return render_template('login.html')
+
+@app.route('/logout')
+@login_required
+def logout():
+    logout_user()
+    return redirect(url_for('login'))
+
+@app.route('/')
+@login_required
+def select_page():
+    return render_template('select_page.html')
 
 # Define the list of namespaces from environment variable
 allowed_namespaces_str = os.environ.get('ALLOWED_NAMESPACES', 'ngmy-dev,ngmy-uat,ngmy-qc')
@@ -42,11 +94,6 @@ def run_kubectl_command(command, namespace):
     except subprocess.CalledProcessError as e:
         logging.error(f'Error executing kubectl command: {e.output}')
         return jsonify({'error': f'Error executing kubectl command: {e.output}'})
-
-
-@app.route('/')
-def select_page():
-    return render_template('select_page.html')
 
 @app.route('/index_kube', methods=['GET', 'POST'])
 def index_kube():
@@ -102,15 +149,10 @@ def execute_curl():
     try:
         response = run_kubectl_command(['exec', '-it', pod_name, '--', 'sh', '-c', curl_command], namespace)
         # Assuming run_kubectl_command returns a Flask Response object
-        curl_output = response.data.decode('utf-8')  # Decode bytes to string
-
+        curl_output = response
         return render_template('result.html', curl_output=curl_output)
     except Exception as e:
         return jsonify({'error': str(e)})
 
-
-
-
 if __name__ == '__main__':
     app.run(host='127.0.0.1', port=5000, debug=True)
-
